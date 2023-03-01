@@ -16,12 +16,15 @@ from utils import (
     capitalize_first_letter,
     remove_duplicate_sentences,
     chunk_sentences_into_list,
-    count_words_in_string
+    count_words_in_string,
+    split_into_sentences,
+    chunk_list
 )
 
 DEFAULT_SENTENCES_IN_CHUNK = 30
-
 MIN_SENTENCE_LENGTH = 80
+DEFAULT_LENGTH_BIAS = float(10)
+DEFAULT_NUM_BEAMS = 2
 
 def load_state(key, placeholder = 0):
     return st.session_state[key] if key in st.session_state else placeholder
@@ -79,7 +82,6 @@ def check_file_extension(url_link: str, ext_match: list = [".pdf"]):
     suffix = Path(url_link).suffix
     ext_joined = " OR ".join(ext_match)
     if suffix in ext_match:
-        st.success(f"Web link is correct file type [{ext_joined}]")
         return True
     st.warning(f"Web link entered is not correct file type [{ext_joined}]")
     return False
@@ -106,6 +108,7 @@ def return_pdf_data(pdf_file, pdf_link):
     elif pdf_file and not pdf_link:
         return pdf_file
     elif pdf_link and not pdf_file:
+        set_session_state_key("pdf-data", pdf_link)
         return pdf_link
     else:
         st.warning("You have uploaded both a pdf file and a pdf link. Please choose one.")
@@ -122,12 +125,14 @@ def get_text_data_from_pdf(pdf_data, temp_filename_prefix: str = "temp"):
     with open(temp_filename) as f:
         text = f.read()
     os.remove(temp_filename)
-    return text
+    set_session_state_key("text-data", text)
 
 def image_extraction_component(pdf_data, verbose: bool):
     if st.button("Extract Images", key="image-extraction"):
-        image_container = []
-        image_container = get_images_from_pdf(pdf_data, verbose=verbose)
+        image_container = load_state("image-container", [])
+        if not image_container:
+            image_container = get_images_from_pdf(pdf_data, verbose=verbose)
+            set_session_state_key("image-container", image_container)
         number_of_images = len(image_container)
         image_progress_bar = st.progress(0, f"Image 0 of {number_of_images}")
         image_iterator = 0
@@ -141,14 +146,17 @@ def image_extraction_component(pdf_data, verbose: bool):
         else:
             st.warning("No images to extract")
 
-def text_summary_component(pdf_data):
-
+def text_summary_component(text_data):
+    text_data = load_state("text-data", "")
     if st.button("Summarise Text", key="summarise-text"):
-        text = get_text_data_from_pdf(pdf_data)
         tokenizer, model = load_models()
-        with st.spinner("Summarising Text"):
-            transformed_chunks = summarize_chunks(text, tokenizer, model, DEFAULT_SENTENCES_IN_CHUNK)
-        download_summary_button(transformed_chunks)
+        summary_text = load_state("summary-text", "")
+        if not summary_text:
+            with st.spinner("Summarising Text"):
+                sentences_per_chunk = load_state("sentences-per-chunk", DEFAULT_SENTENCES_IN_CHUNK)
+                transformed_chunks = summarize_chunks(text_data, tokenizer, model, sentences_per_chunk)
+                set_session_state_key("summary-text", transformed_chunks)
+        download_summary_button(summary_text)
 
 SUMMARY_TEXT = "Sentences have been grouped into chunks of size {}. There are a total of {} chunks."
 
@@ -159,10 +167,14 @@ def summarize_chunks(text_data, tokenizer, model, chunk_size) -> str:
     transformed_chunks = []
     st.caption(SUMMARY_TEXT.format(chunk_size, total_chunks))
     progress_bar = st.progress(0)
+    length_bias = load_state("length-bias", DEFAULT_LENGTH_BIAS)
+    num_beams = load_state("num-beams", DEFAULT_NUM_BEAMS)
     for count, text_chunk in enumerate(text_chunks):
         sentence_length = count_words_in_string(text_chunk)
         if sentence_length > MIN_SENTENCE_LENGTH:
-            transformed_text = transform_text(text_chunk, tokenizer, model, sentence_length, MIN_SENTENCE_LENGTH)
+            transformed_text = transform_text(
+                text_chunk, tokenizer, model, sentence_length, MIN_SENTENCE_LENGTH, length_bias, num_beams 
+            )
             formatted_text = clean_html(transformed_text)
             formatted_text = capitalize_each_sentence(formatted_text)
             formatted_text = capitalize_first_letter(formatted_text)
@@ -183,3 +195,68 @@ def download_summary_button(transformed_chunks: list):
         file_name="pdf_text_summary.txt",
         key="download-summary"
     )
+
+def clear_cache():
+    # Delete all the items in Session state
+    for key in st.session_state.keys():
+        del st.session_state[key]
+
+def clear_cache_button(app_name: str):
+    if st.button(
+        label="Clear PDF Data",
+        key=f"clear-cache-{app_name}",
+        help="Clears all in-session data in the app",
+        on_click=clear_cache,
+        type="secondary"
+    ):
+        st.success("Data Cleared")
+
+
+def sidebar_widget():
+    text_data = load_state("text-data", "")
+    with st.sidebar:
+        st.markdown("### AI Summarizer Algorithm Settings")
+        create_space(1)
+        sentences_per_chunk = st.number_input(
+            label="Set number of sentences per chunk",
+            value=DEFAULT_SENTENCES_IN_CHUNK,
+            min_value=5,
+            max_value=100,
+            step=1,
+            key="sentences-per-chunk",
+            help="The greater the number of sentences per text chunk, the more text algorithm has to summarise, and the less summarizing sentences overall."
+        )
+        create_space(1)
+        num_beams = st.number_input(
+            label="Set the iterations per next word",
+            value=DEFAULT_NUM_BEAMS,
+            min_value=1,
+            max_value=5,
+            step=1,
+            key="num-beams",
+            help="Beam search reduces the risk of missing hidden high probability word sequences by keeping the most likely num_beams of hypotheses at each time step and eventually choosing the hypothesis that has the overall highest probability."
+        )
+        length_bias = st.number_input(
+            label="Set the length bias of the algorithm",
+            value=DEFAULT_LENGTH_BIAS,
+            min_value=-float(10),
+            max_value=float(10),
+            step=float(1),
+            key="length-bias",
+            help="Length_penalty > 0.0 promotes longer sequences, while length_penalty < 0.0 encourages shorter sequences."
+        )
+        create_space(1)
+        st.markdown("### PDF Report Summary")
+        if text_data:
+            text_length = len(text_data.split())
+            sentences = split_into_sentences(text_data)
+            chunks = chunk_list(sentences, sentences_per_chunk)
+            text_chunks = [" ".join(chunk).strip() for chunk in chunks]
+            st.metric(label="Number of words", value=f"{text_length:,}")
+            st.metric(label="Number of sentences", value=f"{len(sentences):,}")
+            st.metric(label="Number of sentences per chunk", value=sentences_per_chunk)
+            st.metric(label="Number of chunks to summarise", value=len(text_chunks))
+        else:
+            st.warning("No PDF report uploaded")
+        create_space(1)
+        clear_cache_button("app")

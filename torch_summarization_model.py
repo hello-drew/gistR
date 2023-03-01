@@ -8,7 +8,15 @@ def load_models():
     return tokenizer, model
 
 
-def transform_text(text_data, tokenizer, model, max_length: int = 512, min_length: int =  80):
+def transform_text(
+        text_data,
+        tokenizer,
+        model,
+        max_length: int = 512,
+        min_length: int =  80,
+        length_penalty: float = 10.,
+        num_beams: int = 2
+    ):
     prompt = f"summarize: {text_data}"
     inputs = tokenizer.encode(
         prompt,
@@ -20,8 +28,8 @@ def transform_text(text_data, tokenizer, model, max_length: int = 512, min_lengt
         inputs,
         max_length=max_length,
         min_length=min_length,
-        length_penalty=10.,
-        num_beams=2
+        length_penalty=length_penalty,
+        num_beams=num_beams
     )
     summary = tokenizer.decode(summary_ids[0])
     return summary
