@@ -128,8 +128,8 @@ def get_text_data_from_pdf(pdf_data, temp_filename_prefix: str = "temp"):
     set_session_state_key("text-data", text)
 
 def image_extraction_component(pdf_data, verbose: bool):
+    image_container = load_state("image-container", [])
     if st.button("Extract Images", key="image-extraction"):
-        image_container = load_state("image-container", [])
         if not image_container:
             image_container = get_images_from_pdf(pdf_data, verbose=verbose)
             set_session_state_key("image-container", image_container)
@@ -148,9 +148,9 @@ def image_extraction_component(pdf_data, verbose: bool):
 
 def text_summary_component(text_data):
     text_data = load_state("text-data", "")
+    summary_text = load_state("summary-text", "")
     if st.button("Summarise Text", key="summarise-text"):
         tokenizer, model = load_models()
-        summary_text = load_state("summary-text", "")
         if not summary_text:
             with st.spinner("Summarising Text"):
                 sentences_per_chunk = load_state("sentences-per-chunk", DEFAULT_SENTENCES_IN_CHUNK)

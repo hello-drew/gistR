@@ -1,5 +1,5 @@
 Pillow
 PyMuPDF
 streamlit
-transformers
 torch
+transformers
