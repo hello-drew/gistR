@@ -1,0 +1,13 @@
+PDF_DATA_KEY = "pdf-data"
+TEXT_DATA_KEY = "text-data"
+IMAGE_CONTAINER_KEY = "image-container"
+SUMMARY_TEXT_KEY = "summary-text"
+SENTENCES_PER_CHUNK_KEY = "sentences-per-chunk"
+NUM_BEAMS_KEY = "num-beams"
+LENGTH_BIAS_KEY = "length-bias"
+
+DEFAULT_SENTENCES_IN_CHUNK = 30
+MIN_SENTENCE_LENGTH = 80
+DEFAULT_LENGTH_BIAS = float(10)
+LENGTH_BIAS_SPREAD = 20
+DEFAULT_NUM_BEAMS = 2

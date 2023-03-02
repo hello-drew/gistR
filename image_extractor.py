@@ -1,6 +1,8 @@
 from PIL import Image
 import io
+import streamlit as st
 
+st.cache_resource
 def get_images_from_pdf(pdf_file, verbose: bool = False) -> list:
     # iterate over pdf pages
     image_list_container = []

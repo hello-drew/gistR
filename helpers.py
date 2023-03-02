@@ -1,5 +1,4 @@
 import os
-
 from math import ceil
 from pathlib import Path
 
@@ -21,10 +20,20 @@ from utils import (
     chunk_list
 )
 
-DEFAULT_SENTENCES_IN_CHUNK = 30
-MIN_SENTENCE_LENGTH = 80
-DEFAULT_LENGTH_BIAS = float(10)
-DEFAULT_NUM_BEAMS = 2
+from config import (
+    PDF_DATA_KEY,
+    TEXT_DATA_KEY,
+    IMAGE_CONTAINER_KEY,
+    SUMMARY_TEXT_KEY,
+    DEFAULT_SENTENCES_IN_CHUNK,
+    MIN_SENTENCE_LENGTH,
+    DEFAULT_LENGTH_BIAS,
+    LENGTH_BIAS_SPREAD,
+    DEFAULT_NUM_BEAMS,
+    SENTENCES_PER_CHUNK_KEY,
+    NUM_BEAMS_KEY,
+    LENGTH_BIAS_KEY
+)
 
 def load_state(key, placeholder = 0):
     return st.session_state[key] if key in st.session_state else placeholder
@@ -83,16 +92,16 @@ def check_file_extension(url_link: str, ext_match: list = [".pdf"]):
     ext_joined = " OR ".join(ext_match)
     if suffix in ext_match:
         return True
-    st.warning(f"Web link entered is not correct file type [{ext_joined}]")
+    st.warning(f"URL entered is not correct file type [{ext_joined}]")
     return False
 
 def check_if_url_exists(response):
-    with st.spinner("Checking web link is valid"):
+    with st.spinner("Checking URL link is valid"):
         response_code = response.status_code == 200
         if response_code:
-            st.success("Web link is valid")
+            st.success("URL is valid")
             return True
-        st.warning("Web link is not valid.")
+        st.warning("URL is not valid.")
         return False
 
 def get_page_image_str(filename_stem: str) -> str:
@@ -106,9 +115,10 @@ def return_pdf_data(pdf_file, pdf_link):
     if not any([pdf_file, pdf_link]):
         return None
     elif pdf_file and not pdf_link:
+        set_session_state_key(PDF_DATA_KEY, pdf_link)
         return pdf_file
     elif pdf_link and not pdf_file:
-        set_session_state_key("pdf-data", pdf_link)
+        set_session_state_key(PDF_DATA_KEY, pdf_link)
         return pdf_link
     else:
         st.warning("You have uploaded both a pdf file and a pdf link. Please choose one.")
@@ -125,50 +135,61 @@ def get_text_data_from_pdf(pdf_data, temp_filename_prefix: str = "temp"):
     with open(temp_filename) as f:
         text = f.read()
     os.remove(temp_filename)
-    set_session_state_key("text-data", text)
+    set_session_state_key(TEXT_DATA_KEY, text)
 
 def image_extraction_component(pdf_data, verbose: bool):
-    image_container = load_state("image-container", [])
-    if st.button("Extract Images", key="image-extraction"):
-        if not image_container:
+    image_container = load_state(IMAGE_CONTAINER_KEY, [])
+    if image_container:
+        pass
+    else:
+        if st.button("Extract Images", key="image-extraction"):
             image_container = get_images_from_pdf(pdf_data, verbose=verbose)
-            set_session_state_key("image-container", image_container)
-        number_of_images = len(image_container)
-        image_progress_bar = st.progress(0, f"Image 0 of {number_of_images}")
-        image_iterator = 0
-        if number_of_images > 0:
-            with st.expander("Extracted Images", expanded=True):
-                for image_tuple in image_container:
-                    return_image(image_tuple)
-                    image_iterator += 1
-                    pct_progress = return_progress_pct(number_of_images, image_iterator)
-                    image_progress_bar.progress(pct_progress, f"Image {image_iterator} of {number_of_images}")
-        else:
-            st.warning("No images to extract")
+            set_session_state_key(IMAGE_CONTAINER_KEY, image_container)
+    show_images(image_container)
 
-def text_summary_component(text_data):
-    text_data = load_state("text-data", "")
-    summary_text = load_state("summary-text", "")
-    if st.button("Summarise Text", key="summarise-text"):
-        tokenizer, model = load_models()
-        if not summary_text:
-            with st.spinner("Summarising Text"):
-                sentences_per_chunk = load_state("sentences-per-chunk", DEFAULT_SENTENCES_IN_CHUNK)
-                transformed_chunks = summarize_chunks(text_data, tokenizer, model, sentences_per_chunk)
-                set_session_state_key("summary-text", transformed_chunks)
+
+def show_images(image_container: list):
+    number_of_images = len(image_container)
+    image_progress_bar = st.progress(0, f"Image 0 of {number_of_images}")
+    image_iterator = 0
+    if number_of_images > 0:
+        with st.expander("Extracted Images", expanded=True):
+            st.markdown("### Images Extracted From PDF")
+            for image_tuple in image_container:
+                return_image(image_tuple)
+                image_iterator += 1
+                pct_progress = return_progress_pct(number_of_images, image_iterator)
+                image_progress_bar.progress(pct_progress, f"Image {image_iterator} of {number_of_images}")
+    else:
+        st.warning("No images in PDF to extract")
+
+def text_summary_component():
+    text_data = load_state(TEXT_DATA_KEY, "")
+    summary_text = load_state(SUMMARY_TEXT_KEY, "")
+    sentences_per_chunk = load_state(SENTENCES_PER_CHUNK_KEY, "")
+    if summary_text:
         download_summary_button(summary_text)
+    else:
+        if st.button("Summarize Text", key="summarize-text"):
+            tokenizer, model = load_models()
+            with st.spinner("Summarizing Text"):
+                transformed_chunks = summarize_chunks(text_data, tokenizer, model, sentences_per_chunk)
+                set_session_state_key(SUMMARY_TEXT_KEY, transformed_chunks)
+    with st.expander(label="Summarized Text"):
+        st.markdown("### AI Generated PDF Summary")
+        for transformed_chunk in summary_text:
+            st.markdown(transformed_chunk)
 
-SUMMARY_TEXT = "Sentences have been grouped into chunks of size {}. There are a total of {} chunks."
-
+SUMMARY_TEXT_STR = "Sentences have been grouped into chunks of size {}. There are a total of {} chunks."
 
 def summarize_chunks(text_data, tokenizer, model, chunk_size) -> str:
     text_chunks = chunk_sentences_into_list(text_data, chunk_size)
     total_chunks = len(text_chunks)
     transformed_chunks = []
-    st.caption(SUMMARY_TEXT.format(chunk_size, total_chunks))
+    st.caption(SUMMARY_TEXT_STR.format(chunk_size, total_chunks))
     progress_bar = st.progress(0)
-    length_bias = load_state("length-bias", DEFAULT_LENGTH_BIAS)
-    num_beams = load_state("num-beams", DEFAULT_NUM_BEAMS)
+    length_bias = load_state(LENGTH_BIAS_KEY, DEFAULT_LENGTH_BIAS)
+    num_beams = load_state(NUM_BEAMS_KEY, DEFAULT_NUM_BEAMS)
     for count, text_chunk in enumerate(text_chunks):
         sentence_length = count_words_in_string(text_chunk)
         if sentence_length > MIN_SENTENCE_LENGTH:
@@ -183,8 +204,6 @@ def summarize_chunks(text_data, tokenizer, model, chunk_size) -> str:
         progress_count = count + 1
         progress = return_progress_pct(total_chunks, progress_count)
         progress_bar.progress(progress, f"Chunk {progress_count} of {total_chunks}")
-    for transformed_chunk in transformed_chunks:
-        st.markdown(transformed_chunk)
     return transformed_chunks
 
 def download_summary_button(transformed_chunks: list):
@@ -213,40 +232,45 @@ def clear_cache_button(app_name: str):
 
 
 def sidebar_widget():
-    text_data = load_state("text-data", "")
+    
     with st.sidebar:
-        st.markdown("### AI Summarizer Algorithm Settings")
-        create_space(1)
+        st.markdown("### GistR Settings")
         sentences_per_chunk = st.number_input(
-            label="Set number of sentences per chunk",
+            label="Number of sentences per chunk",
             value=DEFAULT_SENTENCES_IN_CHUNK,
             min_value=5,
             max_value=100,
             step=1,
-            key="sentences-per-chunk",
-            help="The greater the number of sentences per text chunk, the more text algorithm has to summarise, and the less summarizing sentences overall."
+            key=SENTENCES_PER_CHUNK_KEY,
+            help="The greater the number of sentences per (text) chunk, the more text the model has to summarize in each chunk."
         )
         create_space(1)
         num_beams = st.number_input(
-            label="Set the iterations per next word",
+            label="Choices available for each word",
             value=DEFAULT_NUM_BEAMS,
             min_value=1,
             max_value=5,
             step=1,
-            key="num-beams",
-            help="Beam search reduces the risk of missing hidden high probability word sequences by keeping the most likely num_beams of hypotheses at each time step and eventually choosing the hypothesis that has the overall highest probability."
+            key=NUM_BEAMS_KEY,
+            help="A higher number increases the number of options avaiable for the next word. The model then chooses the overall summary with highest probability of making sense."
         )
         length_bias = st.number_input(
-            label="Set the length bias of the algorithm",
+            label="Length bias of the algorithm",
             value=DEFAULT_LENGTH_BIAS,
-            min_value=-float(10),
-            max_value=float(10),
+            min_value=-float(LENGTH_BIAS_SPREAD),
+            max_value=float(LENGTH_BIAS_SPREAD),
             step=float(1),
-            key="length-bias",
-            help="Length_penalty > 0.0 promotes longer sequences, while length_penalty < 0.0 encourages shorter sequences."
+            key=LENGTH_BIAS_KEY,
+            help="Length_penalty > 0.0 promotes longer summary sequences, while length_penalty < 0.0 encourages shorter summary sequences."
         )
         create_space(1)
         st.markdown("### PDF Report Summary")
+
+
+def load_pdf_report_summary():
+    with st.sidebar:
+        sentences_per_chunk = load_state(SENTENCES_PER_CHUNK_KEY, "")
+        text_data = load_state(TEXT_DATA_KEY, "")
         if text_data:
             text_length = len(text_data.split())
             sentences = split_into_sentences(text_data)
@@ -255,8 +279,8 @@ def sidebar_widget():
             st.metric(label="Number of words", value=f"{text_length:,}")
             st.metric(label="Number of sentences", value=f"{len(sentences):,}")
             st.metric(label="Number of sentences per chunk", value=sentences_per_chunk)
-            st.metric(label="Number of chunks to summarise", value=len(text_chunks))
+            st.metric(label="Number of chunks to summarize", value=len(text_chunks))
         else:
-            st.warning("No PDF report uploaded")
+            st.warning("Upload PDF to see stats")
         create_space(1)
         clear_cache_button("app")

@@ -134,3 +134,6 @@ dmypy.json
 # feature list
 feature_list.md
 ec2_instructions.md
+
+# vscode
+.vscode
