@@ -25,7 +25,7 @@ st.set_page_config(
 pdf_data = set_session_state_key(PDF_DATA_KEY, None)
 text_data = load_state(TEXT_DATA_KEY, "")
 
-st.header("GistR 📝 | PDF Summary & Image Extraction")
+st.header("📝 GistR | PDF Summary & Image Extraction")
 
 create_space(1)
 with st.expander(label="How to use GistR", expanded=True):
