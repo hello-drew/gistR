@@ -177,8 +177,10 @@ def text_summary_component():
                 set_session_state_key(SUMMARY_TEXT_KEY, transformed_chunks)
     with st.expander(label="Summarized Text"):
         st.markdown("### AI Generated PDF Summary")
-        for transformed_chunk in summary_text:
-            st.markdown(transformed_chunk)
+        summary_text = load_state(SUMMARY_TEXT_KEY, "")
+        if summary_text:
+            for transformed_chunk in summary_text:
+                st.markdown(transformed_chunk)
 
 SUMMARY_TEXT_STR = "Sentences have been grouped into chunks of size {}. There are a total of {} chunks."
 
